@@ -28,7 +28,7 @@ type PlayerStatus = {
 
 	/*
 		expiresIn is the number of milliseconds until the
-		player's membership expires. This will be used to 
+		player's membership expires. This will be used to
 		coordinate automatic renewal of memberships
 	*/
 	expiresIn: number | null;
@@ -45,7 +45,7 @@ type PlayerEligibility = {
 
 /*
 	PlayerData represents the data to be returned to Make
-	and stored in Memberstack. Its the result of this 
+	and stored in Memberstack. Its the result of this
 	worker
 */
 type PlayerData = {
@@ -54,13 +54,37 @@ type PlayerData = {
 	elibility: PlayerEligibility;
 };
 
+const EmptyUSChessInfo = {
+	playerName: '--',
+	playerId: '--',
+	playerState: '--',
+	regularRating: '--',
+	quickRating: '--',
+	blitzRating: '--',
+	expirationDt: '--',
+}
+
 export default {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const id = url.searchParams.get('memberId');
 
-		if (!id) {
-			return new Response('No ID provided', { status: 400 });
+		if (!id || id.trim().length === 0) {
+			const memberInfo = {
+				id: null,
+				eligibility: {
+					eligible: false,
+					reason: 'player_missing_id'
+				},
+				data: EmptyUSChessInfo
+			}
+
+			return new Response(JSON.stringify(memberInfo), {
+				status: 200,
+				headers: {
+					'content-type': 'application/json',
+				},
+			});
 		}
 
 		try {
@@ -72,7 +96,20 @@ export default {
 				},
 			});
 		} catch (error: any) {
-			return new Response(error.message, { status: 500, statusText: 'Internal Server Error' });
+			const memberInfo = {
+				id: null,
+				eligibility: {
+					eligible: false,
+					reason: 'error'
+				},
+				data: EmptyUSChessInfo
+			}
+			return new Response(JSON.stringify(memberInfo), {
+				status: 200,
+				headers: {
+					'content-type': 'application/json',
+				},
+			});
 		}
 	},
 };
@@ -97,12 +134,12 @@ async function getMemberInformation(id: string) {
 		expiresIn: chessInfo.expirationDt ? new Date(chessInfo.expirationDt).getTime() - Date.now() : null,
 	}
 
-	// determine elibility
-	const elibility = determineEligibility(id, chessInfo, playerStatus);
+	// determine eligibility
+	const eligibility = determineEligibility(id, chessInfo, playerStatus);
 
 	return {
 		id,
-		elibility,
+		eligibility,
 		data: chessInfo
 	};
 }
@@ -110,7 +147,7 @@ async function getMemberInformation(id: string) {
 function determineEligibility(requestedId: string, playerInfo: USChessInfo, playerStatus: PlayerStatus) {
 
 	// If the player wasn't found, they are not eligible
-	if (playerInfo.playerId === 'Not found') {
+	if (playerInfo.playerId === '--') {
 		return {
 			eligible: false,
 			reason: 'player_not_found'
@@ -136,9 +173,9 @@ function determineEligibility(requestedId: string, playerInfo: USChessInfo, play
 	// If any of the required fields are missing, they are not eligible
 	// Non-critical fields are: playerState, quickRating, blitzRating
 	if (
-		playerInfo.playerName === 'Player not found' ||
-		playerInfo.regularRating === 'Not found' ||
-		playerInfo.expirationDt === 'Not found'
+		playerInfo.playerName === '--' ||
+		playerInfo.regularRating === '--' ||
+		playerInfo.expirationDt === '--'
 	) {
 		return {
 			eligible: false,
@@ -148,7 +185,7 @@ function determineEligibility(requestedId: string, playerInfo: USChessInfo, play
 
 	return {
 		eligible: true,
-		reason: null
+		reason: 'player_valid'
 	};
 }
 
@@ -161,13 +198,13 @@ function extractChessInfo(htmlContent: string): USChessInfo {
 
 	if (isInvalid) {
 		return {
-			playerName: 'Player not found',
-			playerId: 'Not found',
-			playerState: 'Not found',
-			regularRating: 'Not found',
-			quickRating: 'Not found',
-			blitzRating: 'Not found',
-			expirationDt: 'Not found'
+			playerName: '--',
+			playerId: '--',
+			playerState: '--',
+			regularRating: '--',
+			quickRating: '--',
+			blitzRating: '--',
+			expirationDt: '--'
 		}
 	}
 
@@ -197,12 +234,12 @@ function extractChessInfo(htmlContent: string): USChessInfo {
 	const expirationDate = $('td:contains("Expiration Dt.")').next('td').find('b').text().trim();
 
 	return {
-		playerName: fullName || 'Player not found',
-		playerId: id || 'Not found',
-		playerState: state || 'Not found',
-		regularRating: ratings['Regular Rating'] || 'Not found',
-		quickRating: ratings['Quick Rating'] || 'Not found',
-		blitzRating: ratings['Blitz Rating'] || 'Not found',
-		expirationDt: expirationDate || 'Not found'
+		playerName: fullName || '--',
+		playerId: id || '--',
+		playerState: state || '--',
+		regularRating: ratings['Regular Rating'] || '--',
+		quickRating: ratings['Quick Rating'] || '--',
+		blitzRating: ratings['Blitz Rating'] || '--',
+		expirationDt: expirationDate || '--'
 	};
 }
